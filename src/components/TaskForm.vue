@@ -19,10 +19,10 @@ const { ui, createTask } = useKanban()
         <option value="baja">Baja (sin límite)</option>
       </select>
     </div>
-    <div>
+    <!-- <div>
       <label class="block text-sm font-medium text-slate-200">Fecha límite</label>
       <input data-testid="new-due" v-model="ui.newTask.dueAtInput" type="datetime-local" class="border border-slate-700 bg-slate-900 text-slate-100 rounded px-3 py-2" />
-    </div>
+    </div> -->
     <button data-testid="add-btn" @click="createTask" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded">Añadir a TODO</button>
   </div>
 </template>

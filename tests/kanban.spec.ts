@@ -20,8 +20,8 @@ test.describe('Pizarra Kanban - e2e', () => {
     const now = new Date()
     now.setHours(now.getHours() + 1)
     const pad = (n: number) => String(n).padStart(2, '0')
-    const val = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
-    await page.getByTestId('new-due').fill(val)
+    // const val = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
+    // await page.getByTestId('new-due').fill(val)
 
     await page.getByTestId('add-btn').click()
 
