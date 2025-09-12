@@ -50,6 +50,46 @@ test.describe('Pizarra Kanban - e2e', () => {
     await expect(firstCard).toContainText('Media')
   })
 
+  test('editar prioridad recalcula tiempo restante (dueAt) automáticamente', async ({ page }) => {
+    await page.goto('/')
+
+    // Crear tarea con prioridad normal (48h por defecto)
+    await page.getByTestId('new-title').fill('Con vencimiento')
+    await page.getByTestId('new-priority').selectOption('normal')
+    await page.getByTestId('add-btn').click()
+
+    const card = page.locator('[data-col="todo"] [data-testid="task-card"]').first()
+    // Capturar el texto completo de la línea "Vence: ... (Xh Ym)"
+    const dueLine = card.getByText(/^Vence:/)
+    const initialText = await dueLine.textContent()
+
+    // Editar y cambiar prioridad a alta sin tocar la fecha
+    await card.getByTestId('edit-btn').click()
+    await expect(page.getByTestId('edit-modal')).toBeVisible()
+    await page.getByTestId('edit-priority').selectOption('alta')
+    // No modificar edit-due
+    await page.getByTestId('save-edit').click()
+
+    // Verificar que el tiempo restante disminuyó (de ~48h a ~12h)
+    await expect(dueLine).toContainText(/\(\-?\d+h \d+m\)/)
+    const afterText = await dueLine.textContent()
+
+    // Extraer horas del patrón "(Xh Ym)" o "(-Xh Ym)"
+    const extractHours = (s: string | null) => {
+      if (!s) return Number.NaN
+      const m = s.match(/\((?:-)?(\d+)h\s+\d+m\)/)
+      return m ? parseInt(m[1], 10) : Number.NaN
+    }
+    const hBefore = extractHours(initialText)
+    const hAfter = extractHours(afterText)
+
+    expect(Number.isNaN(hBefore)).toBeFalsy()
+    expect(Number.isNaN(hAfter)).toBeFalsy()
+    // Debe ser significativamente menor: menos de 24h tras pasar de 48h a 12h
+    expect(hAfter).toBeLessThan(hBefore)
+    expect(hAfter).toBeLessThanOrEqual(12)
+  })
+
   test('borrar una tarea la elimina y actualiza contador', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('new-title').fill('Para borrar')

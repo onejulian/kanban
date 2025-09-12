@@ -173,9 +173,25 @@ function saveEdit() {
   const idx = list.findIndex((t) => t.id === ui.form.id)
   if (idx === -1) return cancelEdit()
   const task = list[idx]
-  task.title = ui.form.title.trim() || task.title
-  task.priority = ui.form.priority || 'normal'
-  task.dueAt = fromLocalInputValue(ui.form.dueAtInput) || null
+
+  const originalPriority = task.priority
+  const originalDueLocal = toLocalInputValue(task.dueAt)
+  const newTitle = ui.form.title.trim()
+  const newPriority = ui.form.priority || 'normal'
+  const dueInput = ui.form.dueAtInput || ''
+  const parsedNewDue = fromLocalInputValue(dueInput)
+  const isDueUnchanged = (dueInput || '') === (originalDueLocal || '')
+  const didPriorityChange = newPriority !== originalPriority
+
+  task.title = newTitle || task.title
+  task.priority = newPriority
+
+  if (didPriorityChange && isDueUnchanged) {
+    task.dueAt = defaultDueAt(newPriority)
+  } else {
+    task.dueAt = parsedNewDue || null
+  }
+
   cancelEdit()
 }
 
