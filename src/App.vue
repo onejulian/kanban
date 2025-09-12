@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, watch } from 'vue'
+import { reactive, watch, computed } from 'vue'
 
 const PRIORITY_TO_HOURS = {
   alta: 12,
@@ -8,10 +8,14 @@ const PRIORITY_TO_HOURS = {
   baja: null,
 }
 
-const STORAGE_KEY = 'kanban_state_v1'
+const STORAGE_KEY = 'kanban_state_v2'
 
 function uid() {
   return 't_' + Math.random().toString(36).slice(2, 10)
+}
+
+function eid() {
+  return 'e_' + Math.random().toString(36).slice(2, 10)
 }
 
 function defaultDueAt(priority) {
@@ -68,13 +72,43 @@ function timeLeft(task) {
   return `${sign}${h}h ${m}m`
 }
 
+function formatDurationMs(ms) {
+  const abs = Math.abs(ms)
+  const d = Math.floor(abs / 86400000)
+  const h = Math.floor((abs % 86400000) / 3600000)
+  const m = Math.floor((abs % 3600000) / 60000)
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
+}
+
+function percentile(values, p) {
+  const v = [...values].sort((a, b) => a - b)
+  if (v.length === 0) return 0
+  const idx = (v.length - 1) * p
+  const lo = Math.floor(idx)
+  const hi = Math.ceil(idx)
+  if (lo === hi) return v[lo]
+  const w = idx - lo
+  return v[lo] * (1 - w) + v[hi] * w
+}
+
+function median(values) {
+  return percentile(values, 0.5)
+}
+
 const state = reactive({
   tasks: {
     todo: [],
     inprogress: [],
     done: [],
   },
+  events: [],
 })
+
+function logEvent(type, payload) {
+  state.events.push({ id: eid(), type, timestamp: new Date().toISOString(), payload })
+}
 
 function load() {
   try {
@@ -84,17 +118,19 @@ function load() {
     state.tasks.todo = parsed?.tasks?.todo ?? []
     state.tasks.inprogress = parsed?.tasks?.inprogress ?? []
     state.tasks.done = parsed?.tasks?.done ?? []
+    state.events = parsed?.events ?? []
   } catch (e) {
     console.error('Error cargando localStorage', e)
   }
 }
 
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ tasks: state.tasks }))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, tasks: state.tasks, events: state.events }))
 }
 
 load()
 watch(() => state.tasks, save, { deep: true })
+watch(() => state.events, save, { deep: true })
 
 const ui = reactive({
   newTask: { title: '', priority: 'normal', dueAtInput: '' },
@@ -103,6 +139,7 @@ const ui = reactive({
   form: { id: null, title: '', priority: 'normal', dueAtInput: '' },
   editCol: null,
   confirmDelete: { open: false, taskId: null, colId: null, title: '' },
+  analyticsOpen: false,
 })
 
 const columns = [
@@ -136,13 +173,19 @@ function createTask() {
   if (!title) return
   const priority = ui.newTask.priority || 'normal'
   const dueAt = fromLocalInputValue(ui.newTask.dueAtInput) || defaultDueAt(priority)
-  state.tasks.todo.push({
+  const now = new Date().toISOString()
+  const task = {
     id: uid(),
     title,
     priority,
     dueAt,
-    createdAt: new Date().toISOString(),
-  })
+    createdAt: now,
+    lastUpdatedAt: now,
+    editsCount: 0,
+    stateTransitions: [{ column: 'todo', enteredAt: now }],
+  }
+  state.tasks.todo.push(task)
+  logEvent('created', { id: task.id, priority: task.priority, dueAt: task.dueAt })
   ui.newTask.title = ''
   ui.newTask.priority = 'normal'
   ui.newTask.dueAtInput = ''
@@ -186,10 +229,20 @@ function saveEdit() {
   task.title = newTitle || task.title
   task.priority = newPriority
 
+  const beforeDue = task.dueAt
   if (didPriorityChange && isDueUnchanged) {
     task.dueAt = defaultDueAt(newPriority)
   } else {
     task.dueAt = parsedNewDue || null
+  }
+  task.lastUpdatedAt = new Date().toISOString()
+  task.editsCount = (task.editsCount || 0) + 1
+  logEvent('edited', { id: task.id })
+  if (didPriorityChange) {
+    logEvent('priority_changed', { id: task.id, before: originalPriority, after: newPriority })
+  }
+  if ((beforeDue || task.dueAt) && beforeDue !== task.dueAt) {
+    logEvent('due_changed', { id: task.id, before: beforeDue, after: task.dueAt })
   }
 
   cancelEdit()
@@ -198,7 +251,11 @@ function saveEdit() {
 function deleteTask(taskId, colId) {
   const list = state.tasks[colId]
   const idx = list.findIndex((t) => t.id === taskId)
-  if (idx !== -1) list.splice(idx, 1)
+  if (idx !== -1) {
+    const removed = list[idx]
+    list.splice(idx, 1)
+    logEvent('deleted', { id: removed.id, from: colId })
+  }
 }
 
 function openDeleteConfirm(task, colId) {
@@ -247,7 +304,113 @@ function onDrop(e, toCol) {
   if (idx === -1) return
   const [moved] = fromList.splice(idx, 1)
   state.tasks[toCol].push(moved)
+  const now = new Date().toISOString()
+  moved.stateTransitions = Array.isArray(moved.stateTransitions) ? moved.stateTransitions : []
+  moved.stateTransitions.push({ column: toCol, enteredAt: now })
+  moved.lastUpdatedAt = now
+  logEvent('moved', { id: moved.id, from: fromCol, to: toCol })
+  if (toCol === 'done' && !moved.completedAt) {
+    moved.completedAt = now
+    logEvent('completed', { id: moved.id })
+  }
 }
+
+function allTasks() {
+  return [...state.tasks.todo, ...state.tasks.inprogress, ...state.tasks.done]
+}
+
+function tasksNotDone() {
+  return [...state.tasks.todo, ...state.tasks.inprogress]
+}
+
+function timeEnteredColumn(task, columnId) {
+  const arr = Array.isArray(task.stateTransitions) ? task.stateTransitions : []
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (arr[i].column === columnId) return arr[i].enteredAt
+  }
+  return task.createdAt || null
+}
+
+const kpis = computed(() => {
+  const doneTasks = state.tasks.done.filter(t => t.createdAt && t.completedAt)
+  const leadTimesMs = doneTasks.map(t => new Date(t.completedAt) - new Date(t.createdAt)).filter(n => Number.isFinite(n) && n >= 0)
+  const leadMed = median(leadTimesMs)
+  const leadP95 = percentile(leadTimesMs, 0.95)
+
+  const now = new Date()
+  const since7d = new Date(now.getTime() - 7 * 86400000)
+  const throughput7d = doneTasks.filter(t => new Date(t.completedAt) >= since7d).length
+
+  const slaTasks = doneTasks.filter(t => t.dueAt)
+  const slaHit = slaTasks.filter(t => new Date(t.completedAt) <= new Date(t.dueAt)).length
+  const slaPct = slaTasks.length ? Math.round((slaHit / slaTasks.length) * 100) : 0
+
+  const wip = {
+    todo: state.tasks.todo.length,
+    inprogress: state.tasks.inprogress.length,
+    done: state.tasks.done.length,
+    totalWip: state.tasks.todo.length + state.tasks.inprogress.length,
+  }
+
+  return {
+    throughput7d,
+    leadMedianMs: leadMed || 0,
+    leadP95Ms: leadP95 || 0,
+    slaPct,
+    wip,
+  }
+})
+
+const throughputSeries = computed(() => {
+  const days = 14
+  const now = new Date()
+  const buckets = []
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
+    const key = d.toISOString().slice(0, 10)
+    buckets.push({ key, date: d, count: 0 })
+  }
+  for (const t of state.tasks.done) {
+    if (!t.completedAt) continue
+    const key = new Date(t.completedAt).toISOString().slice(0, 10)
+    const b = buckets.find(b => b.key === key)
+    if (b) b.count++
+  }
+  const max = Math.max(1, ...buckets.map(b => b.count))
+  return { buckets, max }
+})
+
+const leadTimePoints = computed(() => {
+  const pts = state.tasks.done
+    .filter(t => t.createdAt && t.completedAt)
+    .slice(-50)
+    .map(t => ({
+      id: t.id,
+      ms: new Date(t.completedAt) - new Date(t.createdAt),
+      priority: t.priority,
+    }))
+  const max = Math.max(1, ...pts.map(p => p.ms))
+  return { pts, max }
+})
+
+const leadChartWidth = computed(() => {
+  return Math.max(leadTimePoints.value.pts.length * 16, 300)
+})
+
+const agingWip = computed(() => {
+  const list = state.tasks.inprogress.map(t => {
+    const enteredAt = timeEnteredColumn(t, 'inprogress')
+    const ms = enteredAt ? (Date.now() - new Date(enteredAt).getTime()) : 0
+    return {
+      id: t.id,
+      title: t.title,
+      priority: t.priority,
+      timeInColumnMs: ms,
+      dueAt: t.dueAt,
+    }
+  })
+  return list.sort((a, b) => b.timeInColumnMs - a.timeInColumnMs).slice(0, 10)
+})
 </script>
 
 <template>
@@ -255,6 +418,9 @@ function onDrop(e, toCol) {
     <header class="mb-6">
       <h1 class="text-3xl font-bold">Pizarra Kanban</h1>
       <p class="text-sm text-slate-400">Prioridades: Alta (12h), Media (24h), Normal (48h), Baja (sin límite)</p>
+      <div class="mt-3">
+        <button data-testid="analytics-open" @click="ui.analyticsOpen = true" class="px-3 py-2 rounded border border-slate-700 text-slate-200 hover:bg-slate-800">Abrir Analytics</button>
+      </div>
     </header>
 
     <section class="mb-4">
@@ -318,6 +484,139 @@ function onDrop(e, toCol) {
         </div>
       </div>
     </main>
+
+    <!-- Modal Analytics -->
+    <div v-if="ui.analyticsOpen" class="fixed inset-0 bg-black/40 flex items-center justify-center">
+      <div data-testid="analytics-modal" class="bg-slate-950 rounded-lg w-[960px] max-w-[95vw] max-h-[90vh] overflow-auto border border-slate-700 shadow-xl">
+        <div class="p-4 border-b border-slate-800 flex items-center justify-between sticky top-0 bg-slate-950/90 backdrop-blur">
+          <h3 class="font-semibold text-lg">Analytics</h3>
+          <button @click="ui.analyticsOpen = false" class="text-slate-400 hover:text-slate-200">✕</button>
+        </div>
+        <div class="p-4 space-y-6">
+          <!-- KPIs -->
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-slate-900 border border-slate-800 rounded p-3">
+              <div class="text-xs text-slate-400 flex items-center">Throughput 7d
+                <span class="relative group cursor-help ml-1">ℹ️
+                  <div class="absolute z-10 hidden group-hover:block w-64 -left-2 bottom-6 bg-slate-800 text-slate-100 text-xs p-2 rounded border border-slate-700 shadow">
+                    Tareas completadas en los últimos 7 días. Ayuda a ver el ritmo.
+                  </div>
+                </span>
+              </div>
+              <div class="text-2xl font-semibold" :data-testid="'analytics-throughput-7d'">{{ kpis.throughput7d }}</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded p-3">
+              <div class="text-xs text-slate-400 flex items-center">WIP (en curso)
+                <span class="relative group cursor-help ml-1">ℹ️
+                  <div class="absolute z-10 hidden group-hover:block w-64 -left-2 bottom-6 bg-slate-800 text-slate-100 text-xs p-2 rounded border border-slate-700 shadow">
+                    Trabajo en progreso: tareas en TODO + IN PROGRESS. Limitar WIP reduce tiempos.
+                  </div>
+                </span>
+              </div>
+              <div class="text-2xl font-semibold" data-testid="analytics-wip">{{ kpis.wip.totalWip }}</div>
+              <div class="text-xs text-slate-400">TODO {{ kpis.wip.todo }} · IN PROGRESS {{ kpis.wip.inprogress }}</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded p-3">
+              <div class="text-xs text-slate-400 flex items-center">Lead time (mediana)
+                <span class="relative group cursor-help ml-1">ℹ️
+                  <div class="absolute z-10 hidden group-hover:block w-64 -left-2 bottom-6 bg-slate-800 text-slate-100 text-xs p-2 rounded border border-slate-700 shadow">
+                    Tiempo desde creación hasta DONE (mediana). Mide velocidad de entrega.
+                  </div>
+                </span>
+              </div>
+              <div class="text-2xl font-semibold" data-testid="analytics-lead-median">{{ formatDurationMs(kpis.leadMedianMs) }}</div>
+              <div class="text-xs text-slate-400">p95: {{ formatDurationMs(kpis.leadP95Ms) }}</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded p-3">
+              <div class="text-xs text-slate-400 flex items-center">SLA a tiempo
+                <span class="relative group cursor-help ml-1">ℹ️
+                  <div class="absolute z-10 hidden group-hover:block w-64 -left-2 bottom-6 bg-slate-800 text-slate-100 text-xs p-2 rounded border border-slate-700 shadow">
+                    Porcentaje de tareas DONE antes de su fecha límite.
+                  </div>
+                </span>
+              </div>
+              <div class="text-2xl font-semibold" data-testid="analytics-sla">{{ kpis.slaPct }}%</div>
+            </div>
+          </div>
+
+          <!-- Run chart: throughput diario 14d -->
+          <div class="bg-slate-900 border border-slate-800 rounded p-3">
+            <div class="text-sm font-medium mb-2 flex items-center">Throughput diario (14d)
+              <span class="relative group cursor-help ml-2 text-xs text-slate-400">ℹ️
+                <div class="absolute z-10 hidden group-hover:block w-72 -left-2 bottom-6 bg-slate-800 text-slate-100 text-xs p-2 rounded border border-slate-700 shadow">
+                  Conteo de tareas completadas por día. Útil para ver tendencias y variabilidad.
+                </div>
+              </span>
+            </div>
+            <div class="h-28">
+              <svg :width="throughputSeries.buckets.length * 22" height="100" class="max-w-full">
+                <g v-for="(b, i) in throughputSeries.buckets" :key="b.key">
+                  <rect :x="i * 22 + 6" :y="100 - (b.count / throughputSeries.max) * 90 - 5" width="12" :height="(b.count / throughputSeries.max) * 90" class="fill-blue-500/80" />
+                  <text :x="i * 22 + 12" y="98" text-anchor="middle" class="fill-slate-400" font-size="8">{{ new Date(b.date).getDate() }}</text>
+                </g>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Control chart: lead time últimos 50 -->
+          <div class="bg-slate-900 border border-slate-800 rounded p-3">
+            <div class="text-sm font-medium mb-2 flex items-center">Control chart de lead time (últimas 50)
+              <span class="relative group cursor-help ml-2 text-xs text-slate-400">ℹ️
+                <div class="absolute z-10 hidden group-hover:block w-80 -left-2 bottom-6 bg-slate-800 text-slate-100 text-xs p-2 rounded border border-slate-700 shadow">
+                  Cada punto es una tarea con su lead time. Observa outliers y estabilidad.
+                </div>
+              </span>
+            </div>
+            <div class="h-40 overflow-x-auto">
+              <svg :width="leadChartWidth" height="140" class="max-w-full">
+                <g v-for="(p, i) in leadTimePoints.pts" :key="p.id">
+                  <circle :cx="i * 16 + 12" :cy="130 - (p.ms / leadTimePoints.max) * 120" r="4" :class="p.priority === 'alta' ? 'fill-red-400' : p.priority === 'media' ? 'fill-orange-400' : p.priority === 'normal' ? 'fill-blue-400' : 'fill-slate-400'">
+                    <title>{{ 'Lead: ' + formatDurationMs(p.ms) }}</title>
+                  </circle>
+                </g>
+                <text :x="leadChartWidth - 4" y="12" text-anchor="end" font-size="10" class="fill-slate-400">max {{ formatDurationMs(leadTimePoints.max) }}</text>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Tabla: Aging WIP -->
+          <div class="bg-slate-900 border border-slate-800 rounded p-3">
+            <div class="text-sm font-medium mb-2 flex items-center">Aging WIP (IN PROGRESS)
+              <span class="relative group cursor-help ml-2 text-xs text-slate-400">ℹ️
+                <div class="absolute z-10 hidden group-hover:block w-80 -left-2 bottom-6 bg-slate-800 text-slate-100 text-xs p-2 rounded border border-slate-700 shadow">
+                  Tareas que llevan más tiempo en IN PROGRESS. Priorizan intervención.
+                </div>
+              </span>
+            </div>
+            <div class="overflow-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-left text-slate-400">
+                    <th class="py-1 pr-2">Título</th>
+                    <th class="py-1 pr-2">Prioridad</th>
+                    <th class="py-1 pr-2">Tiempo en estado</th>
+                    <th class="py-1 pr-2">Tiempo restante</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in agingWip" :key="row.id" class="border-t border-slate-800 hover:bg-slate-800/60">
+                    <td class="py-1 pr-2">{{ row.title }}</td>
+                    <td class="py-1 pr-2">
+                      <span :class="badgeClass({ priority: row.priority })" class="text-xs px-2 py-0.5 rounded-full">{{ priorityLabel(row.priority) }}</span>
+                    </td>
+                    <td class="py-1 pr-2">{{ formatDurationMs(row.timeInColumnMs) }}</td>
+                    <td class="py-1 pr-2">{{ row.dueAt ? timeLeft({ dueAt: row.dueAt, priority: row.priority }) : 'sin límite' }}</td>
+                  </tr>
+                  <tr v-if="agingWip.length === 0">
+                    <td colspan="4" class="py-2 text-slate-400 text-center">Sin tareas en progreso</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div v-if="ui.editing" class="fixed inset-0 bg-black/30 flex items-center justify-center">
       <div data-testid="edit-modal" class="bg-slate-900 rounded-lg w-[640px] max-w-[95vw] shadow border border-slate-700">
