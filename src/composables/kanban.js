@@ -245,6 +245,14 @@ function validateKanbanStateString(value) {
       if (t.dueAt != null && typeof t.dueAt !== 'string') {
         throw new Error(`dueAt inválido en ${col}`)
       }
+      if (t.description != null) {
+        if (typeof t.description !== 'string') {
+          throw new Error(`description inválido en ${col}`)
+        }
+        if (t.description.length > 512) {
+          throw new Error(`description demasiado largo en ${col}`)
+        }
+      }
     }
   }
   if (!Array.isArray(obj.events)) {
@@ -308,11 +316,12 @@ const ui = reactive({
   newTask: { title: '', priority: 'normal', dueAtInput: '' },
   dragging: { taskId: null, fromCol: null },
   editing: false,
-  form: { id: null, title: '', priority: 'normal', dueAtInput: '' },
+  form: { id: null, title: '', priority: 'normal', dueAtInput: '', description: '' },
   editCol: null,
   confirmDelete: { open: false, taskId: null, colId: null, title: '' },
   analyticsOpen: false,
   importDialog: { open: false, text: '', error: '', confirmPhase: false, filename: '' },
+  expandedDescriptions: {},
 })
 
 const columns = [
@@ -370,6 +379,7 @@ function editTask(task, colId) {
   ui.form.title = task.title
   ui.form.priority = task.priority
   ui.form.dueAtInput = toLocalInputValue(task.dueAt)
+  ui.form.description = typeof task.description === 'string' ? task.description : ''
   ui.editCol = colId
 }
 
@@ -379,6 +389,7 @@ function cancelEdit() {
   ui.form.title = ''
   ui.form.priority = 'normal'
   ui.form.dueAtInput = ''
+  ui.form.description = ''
   ui.editCol = null
 }
 
@@ -398,9 +409,11 @@ function saveEdit() {
   const parsedNewDue = fromLocalInputValue(dueInput)
   const isDueUnchanged = (dueInput || '') === (originalDueLocal || '')
   const didPriorityChange = newPriority !== originalPriority
+  const newDescription = String(ui.form.description || '').slice(0, 512)
 
   task.title = newTitle || task.title
   task.priority = newPriority
+  task.description = newDescription
 
   const beforeDue = task.dueAt
   if (didPriorityChange && isDueUnchanged) {
@@ -494,6 +507,14 @@ function timeEnteredColumn(task, columnId) {
     if (arr[i].column === columnId) return arr[i].enteredAt
   }
   return task.createdAt || null
+}
+
+function isDescriptionExpanded(taskId) {
+  return !!ui.expandedDescriptions[taskId]
+}
+
+function toggleDescription(taskId) {
+  ui.expandedDescriptions[taskId] = !ui.expandedDescriptions[taskId]
 }
 
 const kpis = computed(() => {
@@ -602,6 +623,8 @@ export function useKanban() {
     leadTimePoints,
     leadChartWidth,
     agingWip,
+    isDescriptionExpanded,
+    toggleDescription,
     // export/import helpers
     exportAllLocalStorage,
     exportToFile,

@@ -16,6 +16,11 @@ const { ui, cancelEdit, saveEdit } = useKanban()
           <label class="block text-sm font-medium text-slate-200">Título</label>
           <input data-testid="edit-title" v-model="ui.form.title" class="w-full border border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-400 rounded px-3 py-2" />
         </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-200">Descripción</label>
+          <textarea data-testid="edit-description" v-model="ui.form.description" maxlength="512" rows="4" class="w-full border border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-400 rounded px-3 py-2" placeholder="Detalles, notas, criterios de aceptación..."></textarea>
+          <div class="text-xs text-slate-400 text-right">{{ (ui.form.description || '').length }}/512</div>
+        </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-sm font-medium text-slate-200">Prioridad</label>
