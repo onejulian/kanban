@@ -30,7 +30,7 @@ const { state, columns, orderedTasks, badgeClass, priorityLabel, formatDate, tim
             <div class="font-medium break-words">{{ task.title }}</div>
             <span :class="badgeClass(task)" class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap">{{ priorityLabel(task.priority) }}</span>
           </div>
-          <div class="mt-1 text-xs text-slate-400">
+          <div v-if="col.id !== 'done'" class="mt-1 text-xs text-slate-400">
             <span v-if="task.dueAt">Vence: {{ formatDate(task.dueAt) }} ({{ timeLeft(task) }})</span>
             <span v-else>Sin fecha límite</span>
           </div>
