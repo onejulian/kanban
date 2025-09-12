@@ -102,6 +102,7 @@ const ui = reactive({
   editing: false,
   form: { id: null, title: '', priority: 'normal', dueAtInput: '' },
   editCol: null,
+  confirmDelete: { open: false, taskId: null, colId: null, title: '' },
 })
 
 const columns = [
@@ -182,6 +183,27 @@ function deleteTask(taskId, colId) {
   const list = state.tasks[colId]
   const idx = list.findIndex((t) => t.id === taskId)
   if (idx !== -1) list.splice(idx, 1)
+}
+
+function openDeleteConfirm(task, colId) {
+  ui.confirmDelete.open = true
+  ui.confirmDelete.taskId = task.id
+  ui.confirmDelete.colId = colId
+  ui.confirmDelete.title = task.title
+}
+
+function closeDeleteConfirm() {
+  ui.confirmDelete.open = false
+  ui.confirmDelete.taskId = null
+  ui.confirmDelete.colId = null
+  ui.confirmDelete.title = ''
+}
+
+function confirmDelete() {
+  if (ui.confirmDelete.taskId && ui.confirmDelete.colId) {
+    deleteTask(ui.confirmDelete.taskId, ui.confirmDelete.colId)
+  }
+  closeDeleteConfirm()
 }
 
 function onDragStart(e, task, fromCol) {
@@ -274,7 +296,7 @@ function onDrop(e, toCol) {
 
             <div class="mt-3 flex gap-2">
               <button v-if="col.id !== 'done'" data-testid="edit-btn" @dragstart.stop @click="editTask(task, col.id)" class="text-blue-400 hover:text-blue-300 underline text-sm">Editar</button>
-              <button data-testid="delete-btn" @dragstart.stop @click="deleteTask(task.id, col.id)" class="text-red-400 hover:text-red-300 underline text-sm">Borrar</button>
+              <button data-testid="delete-btn" @dragstart.stop @click="openDeleteConfirm(task, col.id)" class="text-red-400 hover:text-red-300 underline text-sm">Borrar</button>
             </div>
           </article>
         </div>
@@ -311,6 +333,23 @@ function onDrop(e, toCol) {
         <div class="p-4 border-t border-slate-700 flex gap-2 justify-end">
           <button data-testid="cancel-edit" @click="cancelEdit" class="px-4 py-2 rounded border border-slate-700 text-slate-200">Cancelar</button>
           <button data-testid="save-edit" @click="saveEdit" class="px-4 py-2 rounded bg-blue-600 text-white">Guardar</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="ui.confirmDelete.open" class="fixed inset-0 bg-black/30 flex items-center justify-center">
+      <div data-testid="delete-modal" class="bg-slate-900 rounded-lg w-[520px] max-w-[95vw] shadow border border-slate-700">
+        <div class="p-4 border-b border-slate-700 flex items-center justify-between">
+          <h3 class="font-semibold">Confirmar borrado</h3>
+          <button @click="closeDeleteConfirm" class="text-slate-400 hover:text-slate-200">✕</button>
+        </div>
+        <div class="p-4 space-y-2">
+          <p>¿Seguro que deseas borrar la tarea <span class="font-semibold">"{{ ui.confirmDelete.title }}"</span>?</p>
+          <p class="text-sm text-slate-400">Esta acción no se puede deshacer.</p>
+        </div>
+        <div class="p-4 border-t border-slate-700 flex gap-2 justify-end">
+          <button data-testid="cancel-delete" @click="closeDeleteConfirm" class="px-4 py-2 rounded border border-slate-700 text-slate-200">Cancelar</button>
+          <button data-testid="confirm-delete" @click="confirmDelete" class="px-4 py-2 rounded bg-red-600 text-white">Borrar</button>
         </div>
       </div>
     </div>

@@ -58,8 +58,25 @@ test.describe('Pizarra Kanban - e2e', () => {
 
     const firstCard = page.locator('[data-col="todo"] [data-testid="task-card"]').first()
     await firstCard.getByTestId('delete-btn').click()
+    await expect(page.getByTestId('delete-modal')).toBeVisible()
+    await page.getByTestId('confirm-delete').click()
     await expect(page.getByTestId('count-todo')).toHaveText(/0 tareas/)
     await expect(page.locator('[data-col="todo"] [data-testid="task-card"]').first()).toHaveCount(0)
+  })
+
+  test('cancelar en la modal no borra la tarea', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('new-title').fill('No borrar')
+    await page.getByTestId('add-btn').click()
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+
+    const firstCard = page.locator('[data-col="todo"] [data-testid="task-card"]').first()
+    await firstCard.getByTestId('delete-btn').click()
+    await expect(page.getByTestId('delete-modal')).toBeVisible()
+    await page.getByTestId('cancel-delete').click()
+    await expect(page.getByTestId('delete-modal')).toBeHidden()
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+    await expect(page.locator('[data-col="todo"] [data-testid="task-card"]').first()).toHaveCount(1)
   })
 
   test('drag & drop mueve la tarjeta entre columnas', async ({ page }) => {
