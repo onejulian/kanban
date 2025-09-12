@@ -281,13 +281,13 @@ function onDrop(e, toCol) {
     </section>
 
     <main class="grid grid-cols-3 gap-4">
-      <div v-for="col in columns" :key="col.id" class="bg-slate-900 rounded-lg shadow border border-slate-700 flex flex-col min-h-[70vh]">
+      <div v-for="col in columns" :key="col.id" class="bg-slate-900 rounded-lg shadow border border-slate-700 flex flex-col h-[70vh]">
         <div class="p-3 border-b border-slate-700 flex items-center justify-between">
           <h2 class="font-semibold">{{ col.title }}</h2>
           <span :data-testid="'count-' + col.id" class="text-xs text-slate-400">{{ state.tasks[col.id].length }} tareas</span>
         </div>
         <div
-          class="flex-1 p-3 space-y-2 overflow-auto"
+          class="flex-1 p-3 space-y-2 overflow-auto scrollbar-none"
           :data-col="col.id"
           @dragover.prevent
           @drop="onDrop($event, col.id)"

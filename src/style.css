@@ -3,3 +3,12 @@
 :root {
   color-scheme: dark;
 }
+
+/* Oculta barras de scroll en todos los navegadores comunes */
+.scrollbar-none {
+  -ms-overflow-style: none; /* IE y Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none; /* Chrome, Safari y Opera */
+}
