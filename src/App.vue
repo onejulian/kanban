@@ -213,21 +213,21 @@ function onDrop(e, toCol) {
 </script>
 
 <template>
-  <div class="p-6 bg-slate-50 text-slate-900 min-h-screen">
+  <div class="p-6 bg-slate-950 text-slate-100 min-h-screen">
     <header class="mb-6">
       <h1 class="text-3xl font-bold">Pizarra Kanban</h1>
-      <p class="text-sm text-slate-600">Prioridades: Alta (12h), Media (24h), Normal (48h), Baja (sin límite)</p>
+      <p class="text-sm text-slate-400">Prioridades: Alta (12h), Media (24h), Normal (48h), Baja (sin límite)</p>
     </header>
 
     <section class="mb-4">
       <div class="flex gap-2 items-end">
         <div class="flex-1">
-          <label class="block text-sm font-medium">Título</label>
-          <input v-model="ui.newTask.title" class="w-full border rounded px-3 py-2" placeholder="Nueva tarea" />
+          <label class="block text-sm font-medium text-slate-200">Título</label>
+          <input data-testid="new-title" v-model="ui.newTask.title" class="w-full border border-slate-700 bg-slate-900 text-slate-100 placeholder-slate-400 rounded px-3 py-2" placeholder="Nueva tarea" />
         </div>
         <div>
-          <label class="block text-sm font-medium">Prioridad</label>
-          <select v-model="ui.newTask.priority" class="border rounded px-3 py-2">
+          <label class="block text-sm font-medium text-slate-200">Prioridad</label>
+          <select data-testid="new-priority" v-model="ui.newTask.priority" class="border border-slate-700 bg-slate-900 text-slate-100 rounded px-3 py-2">
             <option value="alta">Alta (12h)</option>
             <option value="media">Media (24h)</option>
             <option value="normal">Normal (48h)</option>
@@ -235,18 +235,18 @@ function onDrop(e, toCol) {
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium">Fecha límite</label>
-          <input v-model="ui.newTask.dueAtInput" type="datetime-local" class="border rounded px-3 py-2" />
+          <label class="block text-sm font-medium text-slate-200">Fecha límite</label>
+          <input data-testid="new-due" v-model="ui.newTask.dueAtInput" type="datetime-local" class="border border-slate-700 bg-slate-900 text-slate-100 rounded px-3 py-2" />
         </div>
-        <button @click="createTask" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded">Añadir a TODO</button>
+        <button data-testid="add-btn" @click="createTask" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded">Añadir a TODO</button>
       </div>
     </section>
 
     <main class="grid grid-cols-3 gap-4">
-      <div v-for="col in columns" :key="col.id" class="bg-white rounded-lg shadow border flex flex-col min-h-[70vh]">
-        <div class="p-3 border-b flex items-center justify-between">
+      <div v-for="col in columns" :key="col.id" class="bg-slate-900 rounded-lg shadow border border-slate-700 flex flex-col min-h-[70vh]">
+        <div class="p-3 border-b border-slate-700 flex items-center justify-between">
           <h2 class="font-semibold">{{ col.title }}</h2>
-          <span class="text-xs text-slate-500">{{ state.tasks[col.id].length }} tareas</span>
+          <span :data-testid="'count-' + col.id" class="text-xs text-slate-400">{{ state.tasks[col.id].length }} tareas</span>
         </div>
         <div
           class="flex-1 p-3 space-y-2 overflow-auto"
@@ -257,7 +257,9 @@ function onDrop(e, toCol) {
           <article
             v-for="task in orderedTasks(col.id)"
             :key="task.id"
-            class="border rounded p-3 bg-slate-50 hover:bg-slate-100 cursor-move"
+            class="border border-slate-700 rounded p-3 bg-slate-800 hover:bg-slate-700 cursor-move"
+            data-testid="task-card"
+            :data-id="task.id"
             draggable="true"
             @dragstart="onDragStart($event, task, col.id)"
           >
@@ -265,14 +267,14 @@ function onDrop(e, toCol) {
               <div class="font-medium break-words">{{ task.title }}</div>
               <span :class="badgeClass(task)" class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap">{{ priorityLabel(task.priority) }}</span>
             </div>
-            <div class="mt-1 text-xs text-slate-600">
+            <div class="mt-1 text-xs text-slate-400">
               <span v-if="task.dueAt">Vence: {{ formatDate(task.dueAt) }} ({{ timeLeft(task) }})</span>
               <span v-else>Sin fecha límite</span>
             </div>
 
             <div class="mt-3 flex gap-2">
-              <button v-if="col.id !== 'done'" @click="editTask(task, col.id)" class="text-blue-700 hover:underline text-sm">Editar</button>
-              <button @click="deleteTask(task.id, col.id)" class="text-red-700 hover:underline text-sm">Borrar</button>
+              <button v-if="col.id !== 'done'" data-testid="edit-btn" @dragstart.stop @click="editTask(task, col.id)" class="text-blue-400 hover:text-blue-300 underline text-sm">Editar</button>
+              <button data-testid="delete-btn" @dragstart.stop @click="deleteTask(task.id, col.id)" class="text-red-400 hover:text-red-300 underline text-sm">Borrar</button>
             </div>
           </article>
         </div>
@@ -280,20 +282,20 @@ function onDrop(e, toCol) {
     </main>
 
     <div v-if="ui.editing" class="fixed inset-0 bg-black/30 flex items-center justify-center">
-      <div class="bg-white rounded-lg w-[640px] max-w-[95vw] shadow">
-        <div class="p-4 border-b flex items-center justify-between">
+      <div data-testid="edit-modal" class="bg-slate-900 rounded-lg w-[640px] max-w-[95vw] shadow border border-slate-700">
+        <div class="p-4 border-b border-slate-700 flex items-center justify-between">
           <h3 class="font-semibold">Editar tarea</h3>
-          <button @click="cancelEdit" class="text-slate-500 hover:text-slate-700">✕</button>
+          <button @click="cancelEdit" class="text-slate-400 hover:text-slate-200">✕</button>
         </div>
         <div class="p-4 space-y-3">
           <div>
-            <label class="block text-sm font-medium">Título</label>
-            <input v-model="ui.form.title" class="w-full border rounded px-3 py-2" />
+            <label class="block text-sm font-medium text-slate-200">Título</label>
+            <input data-testid="edit-title" v-model="ui.form.title" class="w-full border border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-400 rounded px-3 py-2" />
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-sm font-medium">Prioridad</label>
-              <select v-model="ui.form.priority" class="w-full border rounded px-3 py-2">
+              <label class="block text-sm font-medium text-slate-200">Prioridad</label>
+              <select data-testid="edit-priority" v-model="ui.form.priority" class="w-full border border-slate-700 bg-slate-950 text-slate-100 rounded px-3 py-2">
                 <option value="alta">Alta (12h)</option>
                 <option value="media">Media (24h)</option>
                 <option value="normal">Normal (48h)</option>
@@ -301,14 +303,14 @@ function onDrop(e, toCol) {
               </select>
             </div>
             <div>
-              <label class="block text-sm font-medium">Fecha límite</label>
-              <input v-model="ui.form.dueAtInput" type="datetime-local" class="w-full border rounded px-3 py-2" />
+              <label class="block text-sm font-medium text-slate-200">Fecha límite</label>
+              <input data-testid="edit-due" v-model="ui.form.dueAtInput" type="datetime-local" class="w-full border border-slate-700 bg-slate-950 text-slate-100 rounded px-3 py-2" />
             </div>
           </div>
         </div>
-        <div class="p-4 border-t flex gap-2 justify-end">
-          <button @click="cancelEdit" class="px-4 py-2 rounded border">Cancelar</button>
-          <button @click="saveEdit" class="px-4 py-2 rounded bg-blue-600 text-white">Guardar</button>
+        <div class="p-4 border-t border-slate-700 flex gap-2 justify-end">
+          <button data-testid="cancel-edit" @click="cancelEdit" class="px-4 py-2 rounded border border-slate-700 text-slate-200">Cancelar</button>
+          <button data-testid="save-edit" @click="saveEdit" class="px-4 py-2 rounded bg-blue-600 text-white">Guardar</button>
         </div>
       </div>
     </div>
