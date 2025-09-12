@@ -5,6 +5,7 @@ import KanbanBoard from './components/KanbanBoard.vue'
 import AnalyticsModal from './components/AnalyticsModal.vue'
 import EditModal from './components/EditModal.vue'
 import DeleteModal from './components/DeleteModal.vue'
+import ImportModal from './components/ImportModal.vue'
 import '/src/composables/kanban.js'
 </script>
 
@@ -23,6 +24,7 @@ import '/src/composables/kanban.js'
     <AnalyticsModal />
     <EditModal />
     <DeleteModal />
+    <ImportModal />
   </div>
 </template>
 

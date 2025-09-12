@@ -8,6 +8,7 @@ const PRIORITY_TO_HOURS = {
 }
 
 const STORAGE_KEY = 'kanban_state_v2'
+let suspendSave = false
 
 function uid() {
   return 't_' + Math.random().toString(36).slice(2, 10)
@@ -124,12 +125,132 @@ function load() {
 }
 
 function save() {
+  if (suspendSave) return
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, tasks: state.tasks, events: state.events }))
 }
 
 load()
 watch(() => state.tasks, save, { deep: true })
 watch(() => state.events, save, { deep: true })
+
+// ===== Exportar / Importar =====
+function snapshotAllLocalStorage() {
+  const obj = {}
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key != null) {
+      obj[key] = localStorage.getItem(key)
+    }
+  }
+  return obj
+}
+
+function exportAllLocalStorage() {
+  const content = {
+    __meta__: {
+      app: 'pizarra-kanban',
+      exportedAt: new Date().toISOString(),
+      formatVersion: 1,
+    },
+    localStorage: snapshotAllLocalStorage(),
+  }
+  return JSON.stringify(content, null, 2)
+}
+
+function exportToFile() {
+  try {
+    const json = exportAllLocalStorage()
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const ts = new Date().toISOString().replace(/[:]/g, '-')
+    a.href = url
+    a.download = `pizarra-localstorage-${ts}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error('Error exportando localStorage', e)
+  }
+}
+
+function parseLocalStorageSnapshot(text) {
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error('JSON inválido')
+  }
+  let map = null
+  if (parsed && typeof parsed === 'object' && parsed.localStorage && typeof parsed.localStorage === 'object') {
+    map = parsed.localStorage
+  } else if (parsed && typeof parsed === 'object') {
+    map = parsed
+  }
+  if (!map || typeof map !== 'object') {
+    throw new Error('Estructura no reconocida. Esperado objeto con "localStorage" o mapa clave→valor')
+  }
+  // Asegurar que todos los valores sean strings
+  const result = {}
+  for (const k of Object.keys(map)) {
+    const v = map[k]
+    if (typeof v === 'string' || v == null) {
+      result[k] = v == null ? '' : v
+    } else {
+      result[k] = JSON.stringify(v)
+    }
+  }
+  return result
+}
+
+function doImportReplaceAll(items) {
+  suspendSave = true
+  try {
+    localStorage.clear()
+    for (const [k, v] of Object.entries(items)) {
+      try {
+        localStorage.setItem(k, v)
+      } catch (e) {
+        console.warn('No se pudo escribir clave en localStorage', k, e)
+      }
+    }
+    // Re-sincronizar estado de la app desde el snapshot recién importado
+    state.tasks.todo = []
+    state.tasks.inprogress = []
+    state.tasks.done = []
+    state.events = []
+    load()
+  } finally {
+    suspendSave = false
+  }
+}
+
+function openImportDialog() {
+  ui.importDialog.open = true
+  ui.importDialog.text = ''
+  ui.importDialog.error = ''
+  ui.importDialog.confirmPhase = false
+  ui.importDialog.filename = ''
+}
+
+function closeImportDialog() {
+  ui.importDialog.open = false
+  ui.importDialog.text = ''
+  ui.importDialog.error = ''
+  ui.importDialog.confirmPhase = false
+  ui.importDialog.filename = ''
+}
+
+function confirmImport() {
+  try {
+    const items = parseLocalStorageSnapshot(ui.importDialog.text)
+    doImportReplaceAll(items)
+    closeImportDialog()
+  } catch (e) {
+    ui.importDialog.error = e && e.message ? e.message : 'Error importando datos'
+  }
+}
 
 const ui = reactive({
   newTask: { title: '', priority: 'normal', dueAtInput: '' },
@@ -139,6 +260,7 @@ const ui = reactive({
   editCol: null,
   confirmDelete: { open: false, taskId: null, colId: null, title: '' },
   analyticsOpen: false,
+  importDialog: { open: false, text: '', error: '', confirmPhase: false, filename: '' },
 })
 
 const columns = [
@@ -428,6 +550,12 @@ export function useKanban() {
     leadTimePoints,
     leadChartWidth,
     agingWip,
+    // export/import helpers
+    exportAllLocalStorage,
+    exportToFile,
+    openImportDialog,
+    closeImportDialog,
+    confirmImport,
   }
 }
 

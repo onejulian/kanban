@@ -1,3 +1,6 @@
+// Referencias de tipos Node para usar Buffer sin instalar @types/node
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+declare const Buffer: any
 import { test, expect } from '@playwright/test'
 
 test.describe('Pizarra Kanban - e2e', () => {
@@ -172,6 +175,98 @@ test.describe('Pizarra Kanban - e2e', () => {
     }, { id })
 
     await expect(page.getByTestId('count-done')).toContainText('1 tareas')
+  })
+
+  test('exportar descarga un JSON con claves de localStorage', async ({ page }) => {
+    await page.goto('/')
+    // Crear una tarea para asegurar que exista estado
+    await page.getByTestId('new-title').fill('Para exportar')
+    await page.getByTestId('add-btn').click()
+
+    const [ download ] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByTestId('export-btn').click(),
+    ])
+
+    const suggested = download.suggestedFilename()
+    expect(suggested).toMatch(/pizarra-localstorage-.*\.json$/)
+  })
+
+  test('importar: cancelar no cambia el estado', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('new-title').fill('No tocar')
+    await page.getByTestId('add-btn').click()
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+
+    await page.getByTestId('import-open').click()
+    await expect(page.getByTestId('import-modal')).toBeVisible()
+    await page.getByTestId('import-cancel').click()
+    await expect(page.getByTestId('import-modal')).toBeHidden()
+
+    // Estado debe seguir en 1 tarea
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+  })
+
+  test('importar: JSON inválido muestra error y no cierra modal', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('import-open').click()
+    await expect(page.getByTestId('import-modal')).toBeVisible()
+    await page.getByTestId('import-file').setInputFiles({ name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from('{invalido') })
+    // Esperar a que el archivo se procese (FileReader onload) y el botón se habilite
+    await expect(page.getByTestId('import-confirm')).toBeEnabled()
+    await page.getByTestId('import-confirm').click()
+    await expect(page.getByTestId('import-error')).toBeVisible()
+    await expect(page.getByTestId('import-modal')).toBeVisible()
+  })
+
+  test('importar: reemplaza por completo el localStorage', async ({ page }) => {
+    await page.goto('/')
+    // Crear dos tareas para luego sobrescribir
+    await page.getByTestId('new-title').fill('A')
+    await page.getByTestId('add-btn').click()
+    await page.getByTestId('new-title').fill('B')
+    await page.getByTestId('add-btn').click()
+    await expect(page.getByTestId('count-todo')).toContainText('2 tareas')
+
+    // Preparar un snapshot mínimo que deje 1 tarea en TODO
+    const snapshot = await page.evaluate(() => {
+      const minimal = { version: 2, tasks: { todo: [{ id: 't_1', title: 'Importada', priority: 'normal', createdAt: new Date().toISOString() }], inprogress: [], done: [] }, events: [] }
+      return JSON.stringify({ localStorage: { kanban_state_v2: JSON.stringify(minimal) } })
+    })
+
+    await page.getByTestId('import-open').click()
+    await page.getByTestId('import-file').setInputFiles({ name: 'snapshot.json', mimeType: 'application/json', buffer: Buffer.from(snapshot) })
+    await page.getByTestId('import-confirm').click()
+
+    // Debe haberse reemplazado el estado y quedar 1 tarea Importada
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+    const text = await page.locator('[data-col="todo"] [data-testid="task-card"]').first().textContent()
+    expect(text || '').toContain('Importada')
+  })
+
+  test('importar desde archivo habilita confirmación y realiza importación', async ({ page }) => {
+    await page.goto('/')
+
+    // Crear archivo temporal con snapshot válido
+    const content = await page.evaluate(() => {
+      const snap = { version: 2, tasks: { todo: [{ id: 't_x', title: 'Desde archivo', priority: 'normal', createdAt: new Date().toISOString() }], inprogress: [], done: [] }, events: [] }
+      return JSON.stringify({ localStorage: { kanban_state_v2: JSON.stringify(snap) } }, null, 2)
+    })
+
+    // Playwright no expone API directa para escribir archivo local desde el test runner aquí,
+    // pero sí permite setInputFiles con un FilePayload
+    await page.getByTestId('import-open').click()
+    await expect(page.getByTestId('import-confirm')).toBeDisabled()
+    const input = page.getByTestId('import-file')
+    await input.setInputFiles({ name: 'import-snapshot.json', mimeType: 'application/json', buffer: Buffer.from(content) })
+    await expect(page.getByTestId('import-filename')).toContainText('import-snapshot.json')
+    await expect(page.getByTestId('import-confirm')).toBeEnabled()
+
+    // Confirmar importación
+    await page.getByTestId('import-confirm').click()
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+    const txt = await page.locator('[data-col="todo"] [data-testid="task-card"]').first().textContent()
+    expect(txt || '').toContain('Desde archivo')
   })
 })
 
