@@ -268,6 +268,81 @@ test.describe('Pizarra Kanban - e2e', () => {
     const txt = await page.locator('[data-col="todo"] [data-testid="task-card"]').first().textContent()
     expect(txt || '').toContain('Desde archivo')
   })
+
+  test('importar: error si falta clave kanban_state_v2', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('new-title').fill('Persistente')
+    await page.getByTestId('add-btn').click()
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+
+    const content = JSON.stringify({ localStorage: { otra_clave: 'valor' } })
+    await page.getByTestId('import-open').click()
+    await page.getByTestId('import-file').setInputFiles({ name: 'snapshot-sin-clave.json', mimeType: 'application/json', buffer: Buffer.from(content) })
+    await page.getByTestId('import-confirm').click()
+
+    await expect(page.getByTestId('import-error')).toBeVisible()
+    await expect(page.getByTestId('import-error')).toContainText('Falta la clave')
+    await expect(page.getByTestId('import-modal')).toBeVisible()
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+  })
+
+  test('importar: error si kanban_state_v2 no es JSON válido', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('new-title').fill('Persistente')
+    await page.getByTestId('add-btn').click()
+
+    const bad = JSON.stringify({ localStorage: { kanban_state_v2: 'no-json' } })
+    await page.getByTestId('import-open').click()
+    await page.getByTestId('import-file').setInputFiles({ name: 'snapshot-bad-json.json', mimeType: 'application/json', buffer: Buffer.from(bad) })
+    await page.getByTestId('import-confirm').click()
+
+    await expect(page.getByTestId('import-error')).toBeVisible()
+    await expect(page.getByTestId('import-error')).toContainText('no contiene JSON válido')
+    await expect(page.getByTestId('import-modal')).toBeVisible()
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+  })
+
+  test('importar: error si tasks.todo no es un arreglo', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('new-title').fill('Persistente')
+    await page.getByTestId('add-btn').click()
+
+    const invalid = {
+      version: 2,
+      tasks: { todo: {}, inprogress: [], done: [] },
+      events: [],
+    }
+    const payload = JSON.stringify({ localStorage: { kanban_state_v2: JSON.stringify(invalid) } })
+    await page.getByTestId('import-open').click()
+    await page.getByTestId('import-file').setInputFiles({ name: 'snapshot-todo-no-array.json', mimeType: 'application/json', buffer: Buffer.from(payload) })
+    await page.getByTestId('import-confirm').click()
+
+    await expect(page.getByTestId('import-error')).toBeVisible()
+    await expect(page.getByTestId('import-error')).toContainText('tasks.todo')
+    await expect(page.getByTestId('import-modal')).toBeVisible()
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+  })
+
+  test('importar: error si prioridad es inválida', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('new-title').fill('Persistente')
+    await page.getByTestId('add-btn').click()
+
+    const invalid = {
+      version: 2,
+      tasks: { todo: [{ id: 't_bad', title: 'X', priority: 'urgente' }], inprogress: [], done: [] },
+      events: [],
+    }
+    const payload = JSON.stringify({ localStorage: { kanban_state_v2: JSON.stringify(invalid) } })
+    await page.getByTestId('import-open').click()
+    await page.getByTestId('import-file').setInputFiles({ name: 'snapshot-priority.json', mimeType: 'application/json', buffer: Buffer.from(payload) })
+    await page.getByTestId('import-confirm').click()
+
+    await expect(page.getByTestId('import-error')).toBeVisible()
+    await expect(page.getByTestId('import-error')).toContainText('Prioridad inválida')
+    await expect(page.getByTestId('import-modal')).toBeVisible()
+    await expect(page.getByTestId('count-todo')).toContainText('1 tareas')
+  })
 })
 
 

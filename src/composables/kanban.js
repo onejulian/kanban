@@ -204,6 +204,54 @@ function parseLocalStorageSnapshot(text) {
   return result
 }
 
+// Valida que el contenido de la clave kanban_state_v2 tenga la estructura esperada
+function validateKanbanStateString(value) {
+  if (typeof value !== 'string') {
+    throw new Error('kanban_state_v2 debe ser un string JSON')
+  }
+  let obj
+  try {
+    obj = JSON.parse(value)
+  } catch {
+    throw new Error('kanban_state_v2 no contiene JSON válido')
+  }
+  if (!obj || typeof obj !== 'object') {
+    throw new Error('kanban_state_v2 inválido')
+  }
+  if (obj.version !== 2) {
+    throw new Error('kanban_state_v2.version inválido (esperado 2)')
+  }
+  const tasks = obj.tasks
+  if (!tasks || typeof tasks !== 'object') {
+    throw new Error('kanban_state_v2.tasks inválido')
+  }
+  for (const col of ['todo', 'inprogress', 'done']) {
+    if (!Array.isArray(tasks[col])) {
+      throw new Error(`kanban_state_v2.tasks.${col} debe ser un arreglo`)
+    }
+    for (const t of tasks[col]) {
+      if (!t || typeof t !== 'object') {
+        throw new Error(`Tarea inválida en ${col}`)
+      }
+      if (typeof t.id !== 'string' || !t.id) {
+        throw new Error(`Tarea sin id válido en ${col}`)
+      }
+      if (typeof t.title !== 'string') {
+        throw new Error(`Tarea sin título válido en ${col}`)
+      }
+      if (t.priority && !['alta', 'media', 'normal', 'baja'].includes(t.priority)) {
+        throw new Error(`Prioridad inválida en ${col}`)
+      }
+      if (t.dueAt != null && typeof t.dueAt !== 'string') {
+        throw new Error(`dueAt inválido en ${col}`)
+      }
+    }
+  }
+  if (!Array.isArray(obj.events)) {
+    throw new Error('kanban_state_v2.events debe ser un arreglo')
+  }
+}
+
 function doImportReplaceAll(items) {
   suspendSave = true
   try {
@@ -245,6 +293,10 @@ function closeImportDialog() {
 function confirmImport() {
   try {
     const items = parseLocalStorageSnapshot(ui.importDialog.text)
+    if (!Object.prototype.hasOwnProperty.call(items, STORAGE_KEY)) {
+      throw new Error(`Falta la clave "${STORAGE_KEY}" en el snapshot`)
+    }
+    validateKanbanStateString(items[STORAGE_KEY])
     doImportReplaceAll(items)
     closeImportDialog()
   } catch (e) {
